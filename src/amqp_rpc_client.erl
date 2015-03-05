@@ -132,6 +132,7 @@ init([Connection, RoutingKey]) ->
                           routing_key = RoutingKey},
     State = setup_reply_queue(InitialState),
     setup_consumer(State),
+    amqp_channel:register_return_handler(Channel, self()),
     {ok, State}.
 
 %% Closes the channel this gen_server instance started
@@ -171,6 +172,11 @@ handle_info(#'basic.cancel_ok'{}, State) ->
     {stop, normal, State};
 
 %% @private
+handle_info({#'basic.return'{}, Content}, State = #state{continuations = Conts, channel = _Channel}) ->
+    #amqp_msg{props = #'P_basic'{correlation_id = Id}, payload = Payload} = Content,
+    From = dict:fetch(Id, Conts),
+    gen_server:reply(From, Payload),
+    {noreply, State};
 handle_info({#'basic.deliver'{delivery_tag = DeliveryTag},
              #amqp_msg{props = #'P_basic'{correlation_id = Id},
                        payload = Payload}},
